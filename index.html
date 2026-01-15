@@ -130,8 +130,8 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
 </div>
 
 <!-- Áudios: coloque seu link aqui -->
-<audio id="audioConfirma" src="https://www.myinstants.com/pt/instant/confirma-urna-eletronica/?utm_source=copy&utm_medium=share"></audio>
-<audio id="audioFim" src="https://www.myinstants.com/pt/instant/urna-eletronica-confirma/?utm_source=copy&utm_medium=share"></audio>
+<audio id="audioConfirma" src="https://www.myinstants.com/pt/instant/confirma-urna-eletronica/?utm_source=copy&utm_medium=share" preload="auto" volume="100"></audio>
+<audio id="audioFim" src="https://www.myinstants.com/pt/instant/urna-eletronica-confirma/?utm_source=copy&utm_medium=share" preload="auto" volume="1"></audio>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
@@ -190,14 +190,19 @@ function atualizarCargo() {
 function mostrarComprovante(){
   fimDisplay.style.display="none";
   document.querySelector(".urna").style.display="none";
-  document.getElementById("cNome").textContent=nome;
-  document.getElementById("cTitulo").textContent=titulo;
-  document.getElementById("cData").textContent=new Date().toLocaleString();
-  document.getElementById("comprovante").style.display="flex";
+  document.getElementById("cNome").textContent = nome || "NOME NÃO DISPONÍVEL";
+  document.getElementById("cTitulo").textContent = titulo || "TÍTULO NÃO DISPONÍVEL";
+  document.getElementById("cData").textContent = new Date().toLocaleString();
+  document.getElementById("cVotos").textContent = "VOTO REGISTRADO COM SUCESSO";
+  document.getElementById("comprovante").style.display = "flex";
 }
 
 async function registrarVoto(voto){
-  try{ await document.getElementById("audioConfirma").play(); } catch(e){console.log("Erro audio confirma"); }
+  try{ 
+    const audioConfirma=document.getElementById("audioConfirma");
+    audioConfirma.volume=1; 
+    await audioConfirma.play(); 
+  } catch(e){console.log("Erro audio confirma"); }
 
   const snap = await get(child(ref(db), `votos/${cargoAtual}/${voto}`));
   await set(ref(db, `votos/${cargoAtual}/${voto}`), {count:(snap.exists()?snap.val().count:0)+1});
@@ -211,7 +216,11 @@ async function registrarVoto(voto){
   cargoIndex++;
   if(cargoIndex >= cargos.length){ // Último cargo
     fimDisplay.style.display="flex";
-    try{ await document.getElementById("audioFim").play(); } catch(e){console.log("Erro audio fim"); }
+    try{ 
+      const audioFim=document.getElementById("audioFim");
+      audioFim.volume=1;
+      await audioFim.play(); 
+    } catch(e){console.log("Erro audio fim"); }
     setTimeout(()=>mostrarComprovante(),5000);
     etapa="titulo"; buf=[]; titulo=""; nome=""; cargoIndex=0;
   } else {
@@ -321,7 +330,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     for(const c of cargos){
       const snap = await get(ref(db, `votos/${c.nome}`));
       str+=`--- ${c.nome.replace("_"," ")} ---\n`;
-      if(snap.exists()){const votos=snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`;}
+      if(snap.exists()){ const votos=snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`; }
       else str+="Nenhum voto registrado\n";
       str+="\n";
     }
@@ -334,7 +343,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const eleitores = snap.val();
     let str="ELEITORES QUE VOTARAM\n\n";
     for(const t in eleitores){
-      str+=`${t} → ${JSON.stringify(eleitores[t])}\n`;
+      str+=`${eleitores[t]} | ${t}\n`;
     }
     out.textContent=str;
   });
