@@ -9,8 +9,8 @@
 body{margin:0;background:#e9eef6;display:flex;justify-content:center;align-items:center;height:100vh;font-family:Arial,sans-serif;}
 .top{position:fixed;top:10px;right:10px;display:flex;gap:10px;}
 .top button{padding:8px 12px;border-radius:8px;font-weight:bold;cursor:pointer;}
-.urna{width:400px;background:#fff;border-radius:18px;padding:16px;box-shadow:0 15px 40px rgba(0,0,0,.25);}
-.screen{background:#0b1220;color:#fff;padding:14px;border-radius:12px;min-height:220px;position:relative;}
+.urna{width:400px;background:#fff;border-radius:18px;padding:16px;box-shadow:0 15px 40px rgba(0,0,0,.25);position:relative;}
+.screen{background:#0b1220;color:#fff;padding:14px;border-radius:12px;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
 .label{font-size:12px;color:#cbd5e1;}
 .cargo{font-size:20px;font-weight:800;margin:6px 0;}
 .digits{display:flex;justify-content:center;gap:8px;margin:12px 0;}
@@ -29,6 +29,20 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
 .fp{background:#fff;padding:20px;border-radius:16px;width:480px;max-height:90vh;overflow-y:auto;}
 .fp input,.fp button,.fp select{width:100%;margin-top:6px;padding:8px;}
 .fp pre{background:#eee;padding:8px;max-height:400px;overflow:auto;}
+#fimDisplay{
+  position:absolute;
+  inset:0;
+  display:none;
+  justify-content:center;
+  align-items:center;
+  font-size:64px;
+  color:#00ff00;
+  font-weight:800;
+  background:rgba(0,0,0,.8);
+  z-index:99;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {50% {opacity:0;}}
 </style>
 </head>
 <body>
@@ -44,6 +58,7 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
     <div class="cargo" id="cargo"></div>
     <div class="digits" id="digits"></div>
     <div class="candidate" id="candidate"></div>
+    <div id="fimDisplay">FIM</div>
   </div>
 
   <div class="grid">
@@ -72,8 +87,7 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
     <p>Nome: <span id="cNome"></span></p>
     <p>Título: <span id="cTitulo"></span></p>
     <p>Data/Hora: <span id="cData"></span></p>
-    <p>VOTOS REGISTRADOS:</p>
-    <pre id="cVotos"></pre>
+    <p id="cVotos">VOTO REGISTRADO COM SUCESSO</p>
     <p style="text-align:right; font-weight:800;">Nação Brasileira</p>
   </div>
 </div>
@@ -81,7 +95,6 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
 <div id="founderPanel">
 <div class="fp">
 <h3>Painel do Fundador</h3>
-
 <h4>Cadastrar Eleitor</h4>
 <input id="etTitulo" placeholder="Título (8 dígitos)">
 <input id="etNome" placeholder="Nome do eleitor">
@@ -116,6 +129,9 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
 </div>
 </div>
 
+<audio id="audioConfirma" src="https://www.myinstants.com/media/sounds/urnaelectronica_confirma.mp3"></audio>
+<audio id="audioFim" src="https://www.myinstants.com/media/sounds/urnaelectronica_fim.mp3"></audio>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, get, set, child } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
@@ -133,7 +149,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Configuração cargos
+// Variáveis
 let cargos = [
   {nome:"DEP_ESTADUAL", digitos:5},
   {nome:"DEP_FEDERAL", digitos:4},
@@ -141,199 +157,181 @@ let cargos = [
   {nome:"GOVERNADOR", digitos:2},
   {nome:"PRESIDENTE", digitos:2}
 ];
-let cargoIndex = 0;
-let cargoAtual = cargos[cargoIndex].nome;
+let cargoIndex = 0, cargoAtual = cargos[0].nome;
 let etapa = "titulo", buf=[], titulo="", nome="";
 
+// Elementos
 const digitsBox=document.getElementById("digits");
 const label=document.getElementById("label");
 const cargoElem=document.getElementById("cargo");
 const cand=document.getElementById("candidate");
+const fimDisplay=document.getElementById("fimDisplay");
+const founderPanel=document.getElementById("founderPanel");
+const out=document.getElementById("out");
 
-function render(){
-  const lim = etapa==="titulo"?8:cargos[cargoIndex].digitos;
+function render() {
   digitsBox.innerHTML="";
+  let lim = etapa==="titulo"?8:cargos[cargoIndex].digitos;
   for(let i=0;i<lim;i++){
-    const d=document.createElement("div");
+    let d=document.createElement("div");
     d.className="digit";
     d.textContent=buf[i]||"";
     digitsBox.appendChild(d);
   }
 }
 
-function atualizarCargo(){
+function atualizarCargo() {
   cargoAtual = cargos[cargoIndex].nome;
-  cargoElem.textContent = cargoAtual;
-  buf=[]; cand.innerHTML=""; render();
+  cargoElem.textContent=cargoAtual.replace("_"," ");
+  buf=[];
+  render();
+  cand.innerHTML="";
 }
 
-// Botões numéricos
-document.querySelectorAll("[data-n]").forEach(b=>{
-  b.addEventListener("click", ()=> {
-    if(etapa!=="voto" && etapa!=="titulo") return; // bloqueio extra
-    const lim = etapa==="titulo"?8:cargos[cargoIndex].digitos;
-    if(buf.length<lim){buf.push(b.dataset.n); render(); verificarCandidato();}
-  });
-});
-
-document.getElementById("corrige").addEventListener("click", ()=>{buf=[]; render(); cand.innerHTML="";});
-document.getElementById("branco").addEventListener("click", ()=>{
-    if(etapa!=="voto"){alert("Digite seu título primeiro!"); return;}
-    buf=[]; render(); 
-    registrarVoto("BRANCO");
-});
-
-async function verificarCandidato(){
-  const num = buf.join("");
-  if(num.length !== cargos[cargoIndex].digitos) return;
-  const snap = await get(child(ref(db), `candidatos/${cargoAtual}/${num}`));
-  if(snap.exists()){
-    const data = snap.val();
-    cand.innerHTML = `${data.nome} (${data.partido})<br>`;
-    if(data.foto) cand.innerHTML += `<img src="${data.foto}">`;
-  } else cand.textContent = "NÚMERO INVÁLIDO";
+// Função para mostrar comprovante
+function mostrarComprovante(){
+  fimDisplay.style.display="none";
+  document.querySelector(".urna").style.display="none";
+  document.getElementById("cNome").textContent=nome;
+  document.getElementById("cTitulo").textContent=titulo;
+  document.getElementById("cData").textContent=new Date().toLocaleString();
+  document.getElementById("comprovante").style.display="flex";
 }
 
-document.getElementById("confirma").addEventListener("click", async ()=>{
-  if(etapa==="titulo"){
-    if(buf.length!==8){alert("Título inválido"); return;}
-    const snap = await get(child(ref(db), `eleitores/${buf.join("")}`));
-    if(!snap.exists()){alert("Eleitor não cadastrado"); return;}
-    titulo = buf.join(""); 
-    nome = snap.val().nome;
-    const votouSnap = await get(child(ref(db), `eleitores_votaram/${titulo}`));
-    if(votouSnap.exists()){alert("Este título já votou"); return;}
-    
-    // título válido, começa votação
-    etapa="voto";
-    cargoIndex=0;
-    atualizarCargo();
-    label.textContent="SEU VOTO PARA";
-    return;
-  }
-  if(etapa!=="voto") return; // bloqueio extra
-  const num = buf.join("");
-  registrarVoto(num);
-});
-
+// Registrar voto
 async function registrarVoto(voto){
+  // toca confirma
+  document.getElementById("audioConfirma").play();
+
   const snap = await get(child(ref(db), `votos/${cargoAtual}/${voto}`));
   await set(ref(db, `votos/${cargoAtual}/${voto}`), {count:(snap.exists()?snap.val().count:0)+1});
+
   const ip = await fetch("https://api.ipify.org?format=json").then(r=>r.json()).then(d=>d.ip).catch(()=> "Não identificado");
   const snapVotados = await get(child(ref(db), `eleitores_votaram/${titulo}`));
   let dataVotacao = snapVotados.exists()?snapVotados.val():{};
   dataVotacao[cargoAtual]={nome:nome,data:new Date().toLocaleString(),ip:ip,voto:voto};
   await set(ref(db, `eleitores_votaram/${titulo}`), dataVotacao);
+
   cargoIndex++;
   if(cargoIndex>=cargos.length){
-    mostrarComprovante();
-    etapa="titulo"; buf=[]; titulo=""; nome="";
-  } else atualizarCargo();
+    // fim da votação
+    fimDisplay.style.display="flex";
+    document.getElementById("audioFim").play();
+    setTimeout(()=>mostrarComprovante(),5000);
+    etapa="titulo"; buf=[]; titulo=""; nome=""; cargoIndex=0;
+  } else {
+    atualizarCargo();
+  }
 }
 
-function mostrarComprovante(){
-  document.querySelector(".urna").style.display="none";
-  document.getElementById("cNome").textContent=nome;
-  document.getElementById("cTitulo").textContent=titulo;
-  document.getElementById("cData").textContent=new Date().toLocaleString();
-  get(child(ref(db), `eleitores_votaram/${titulo}`)).then(snap=>{
-    if(snap.exists()){
-      let str="";
-      const votos = snap.val();
-      for(const c in votos) str+=`${c}: ${votos[c].voto} (IP: ${votos[c].ip})\n`;
-      document.getElementById("cVotos").textContent=str;
+// Inicializa os eventos após o DOM
+document.addEventListener("DOMContentLoaded", ()=>{
+  // Digitação
+  document.querySelectorAll(".key").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      let lim = etapa==="titulo"?8:cargos[cargoIndex].digitos;
+      if(buf.length<lim){buf.push(b.dataset.n); render();}
+    });
+  });
+
+  document.getElementById("confirma").addEventListener("click", async ()=>{
+    if(etapa==="titulo"){
+      if(buf.length!==8){alert("Título inválido"); return;}
+      const snap = await get(child(ref(db), `eleitores/${buf.join("")}`));
+      if(!snap.exists()){alert("Eleitor não cadastrado"); return;}
+      const votouSnap = await get(child(ref(db), `eleitores_votaram/${buf.join("")}`));
+      if(votouSnap.exists()){alert("Este título já votou"); return;}
+      titulo = buf.join(""); nome = snap.val().nome;
+      etapa="voto"; atualizarCargo();
+    } else if(etapa==="voto"){
+      registrarVoto(buf.join(""));
     }
   });
-  document.getElementById("comprovante").style.display="flex";
-}
 
-// === FUNDADOR ===
-const founderPanel = document.getElementById("founderPanel");
-const out = document.getElementById("out");
+  document.getElementById("branco").addEventListener("click", ()=>{
+    if(etapa!=="voto"){alert("Digite seu título primeiro!"); return;}
+    registrarVoto("BRANCO");
+  });
 
-document.getElementById("btnFundador").addEventListener("click", ()=>{
-    const s = prompt("Digite a senha do fundador:");
-    if(s==="2007") founderPanel.style.display="flex";
-    else alert("Senha incorreta!");
-});
-document.getElementById("fecharFundadorBtn").addEventListener("click", ()=>{founderPanel.style.display="none";});
+  document.getElementById("corrige").addEventListener("click", ()=>{
+    buf=[]; render(); cand.innerHTML="";
+  });
 
-document.getElementById("addEleitorBtn").addEventListener("click", async ()=>{
-    const t = document.getElementById("etTitulo").value;
-    const n = document.getElementById("etNome").value;
-    if(t.length!==8 || !n){alert("Preencha corretamente"); return;}
+  // FUNDADOR
+  document.getElementById("btnFundador").addEventListener("click", ()=>{
+    if(prompt("Senha do fundador")!=="2007") return;
+    founderPanel.style.display="flex";
+  });
+  document.getElementById("fecharFundadorBtn").addEventListener("click", ()=>founderPanel.style.display="none");
+  document.getElementById("addEleitorBtn").addEventListener("click", async ()=>{
+    const t=document.getElementById("etTitulo").value;
+    const n=document.getElementById("etNome").value;
+    if(t.length!==8||!n){alert("Preencha corretamente"); return;}
     await set(ref(db, `eleitores/${t}`), {nome:n});
-    alert("Eleitor cadastrado!");
-    document.getElementById("etTitulo").value=""; document.getElementById("etNome").value="";
-});
-
-document.getElementById("addCandidatoBtn").addEventListener("click", async ()=>{
+    alert("Eleitor cadastrado!"); document.getElementById("etTitulo").value=""; document.getElementById("etNome").value="";
+  });
+  document.getElementById("addCandidatoBtn").addEventListener("click", async ()=>{
     const cargo = document.getElementById("cargoSelect").value;
-    const num = document.getElementById("candNum").value;
-    const n = document.getElementById("candNome").value;
-    const p = document.getElementById("candPartido").value;
-    const f = document.getElementById("candFoto").files[0];
-    if(!num || !n || !p){alert("Preencha todos os campos"); return;}
-    let fotoURL = f ? URL.createObjectURL(f) : "";
+    const num=document.getElementById("candNum").value;
+    const n=document.getElementById("candNome").value;
+    const p=document.getElementById("candPartido").value;
+    const f=document.getElementById("candFoto").files[0];
+    if(!num||!n||!p){alert("Preencha todos os campos"); return;}
+    let fotoURL = f?URL.createObjectURL(f):"";
     await set(ref(db, `candidatos/${cargo}/${num}`), {nome:n,partido:p,foto:fotoURL});
-    alert(`Candidato cadastrado em ${cargo}`);
-    document.getElementById("candNum").value=""; document.getElementById("candNome").value=""; document.getElementById("candPartido").value=""; document.getElementById("candFoto").value="";
-});
+    alert("Candidato cadastrado!"); document.getElementById("candNum").value=""; document.getElementById("candNome").value=""; document.getElementById("candPartido").value=""; document.getElementById("candFoto").value="";
+  });
 
-document.getElementById("verApuracaoBtn").addEventListener("click", async ()=>{
-    let str = "APURAÇÃO DE VOTOS\n\n";
+  document.getElementById("verApuracaoBtn").addEventListener("click", async ()=>{
+    let str="APURAÇÃO DE VOTOS\n\n";
     for(const c of cargos){
-        const snap = await get(ref(db, `votos/${c.nome}`));
-        str += `--- ${c.nome} ---\n`;
-        if(snap.exists()){
-            const votos = snap.val();
-            for(const k in votos) str += `${k} → ${votos[k].count} votos\n`;
-        } else str += "Nenhum voto registrado\n";
-        str += "\n";
+      const snap = await get(ref(db, `votos/${c.nome}`));
+      str+=`--- ${c.nome.replace("_"," ")} ---\n`;
+      if(snap.exists()){
+        const votos = snap.val();
+        for(const k in votos) str+=`${k} → ${votos[k].count}\n`;
+      } else str+="Nenhum voto registrado\n";
+      str+="\n";
     }
-    out.textContent = str;
-});
+    out.textContent=str;
+  });
 
-document.getElementById("verEleitoresBtn").addEventListener("click", async ()=>{
-    const snap = await get(ref(db, "eleitores_votaram"));
+  document.getElementById("verEleitoresBtn").addEventListener("click", async ()=>{
+    const snap = await get(ref(db,"eleitores_votaram"));
     if(!snap.exists()){out.textContent="Nenhum eleitor votou ainda"; return;}
-    let str = "ELEITORES QUE VOTARAM\n\n";
+    let str="ELEITORES QUE VOTARAM\n\n";
     const eleitores = snap.val();
     for(const t in eleitores){
-        str += `Título: ${t}\n`;
-        for(const c in eleitores[t]){
-            str += `${c}: ${eleitores[t][c].voto} (IP: ${eleitores[t][c].ip})\n`;
-        }
-        str += "\n";
+      str+=`Título: ${t}\n`;
+      for(const c in eleitores[t]){
+        str+=`${c}: ${eleitores[t][c].voto} (IP: ${eleitores[t][c].ip})\n`;
+      }
+      str+="\n";
     }
-    out.textContent = str;
-});
+    out.textContent=str;
+  });
 
-document.getElementById("resetBtn").addEventListener("click", async ()=>{
-    if(confirm("Deseja realmente resetar todos os dados?")){
-        await set(ref(db), {});
-        location.reload();
-    }
-});
+  document.getElementById("resetBtn").addEventListener("click", async ()=>{
+    if(confirm("Deseja realmente resetar todos os dados?")){await set(ref(db),{}); location.reload();}
+  });
 
-// === BOLETIM ===
-document.getElementById("btnBoletim").addEventListener("click", async ()=>{
+  document.getElementById("btnBoletim").addEventListener("click", async ()=>{
     const dados = JSON.parse(localStorage.getItem("senhaBoletim"));
     if(!dados){alert("Nenhuma senha de boletim cadastrada"); return;}
-    if(Date.now() > dados.validade){alert("Senha expirada"); return;}
+    if(Date.now()>dados.validade){alert("Senha expirada"); return;}
     const s = prompt("Digite a senha do boletim:");
     if(s!==dados.senha){alert("Senha incorreta"); return;}
-    let str = "BOLETIM DE VOTOS\n\n";
+    let str="BOLETIM DE VOTOS\n\n";
     for(const c of cargos){
-        const snap = await get(ref(db, `votos/${c.nome}`));
-        str += `--- ${c.nome} ---\n`;
-        if(snap.exists()){
-            const votos = snap.val();
-            for(const k in votos) str += `${k} → ${votos[k].count} votos\n`;
-        } else str += "Nenhum voto registrado\n";
-        str += "\n";
+      const snap = await get(ref(db, `votos/${c.nome}`));
+      str+=`--- ${c.nome.replace("_"," ")} ---\n`;
+      if(snap.exists()){const votos=snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`;}
+      else str+="Nenhum voto registrado\n";
+      str+="\n";
     }
     alert(str);
+  });
+
 });
 </script>
 </body>
