@@ -129,8 +129,9 @@ button{padding:14px;font-size:18px;border-radius:8px;border:none;cursor:pointer;
 </div>
 </div>
 
-<audio id="audioConfirma" src="https://www.myinstants.com/media/sounds/urnaelectronica_confirma.mp3"></audio>
-<audio id="audioFim" src="https://www.myinstants.com/media/sounds/urnaelectronica_fim.mp3"></audio>
+<!-- Áudios: coloque seu link aqui -->
+<audio id="audioConfirma" src="https://www.myinstants.com/pt/instant/confirma-urna-eletronica/?utm_source=copy&utm_medium=share"></audio>
+<audio id="audioFim" src="https://www.myinstants.com/pt/instant/urna-eletronica-confirma/?utm_source=copy&utm_medium=share"></audio>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
@@ -149,7 +150,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Variáveis
 let cargos = [
   {nome:"DEP_ESTADUAL", digitos:5},
   {nome:"DEP_FEDERAL", digitos:4},
@@ -160,7 +160,6 @@ let cargos = [
 let cargoIndex = 0, cargoAtual = cargos[0].nome;
 let etapa = "titulo", buf=[], titulo="", nome="";
 
-// Elementos
 const digitsBox=document.getElementById("digits");
 const label=document.getElementById("label");
 const cargoElem=document.getElementById("cargo");
@@ -188,7 +187,6 @@ function atualizarCargo() {
   cand.innerHTML="";
 }
 
-// Função para mostrar comprovante
 function mostrarComprovante(){
   fimDisplay.style.display="none";
   document.querySelector(".urna").style.display="none";
@@ -198,10 +196,8 @@ function mostrarComprovante(){
   document.getElementById("comprovante").style.display="flex";
 }
 
-// Registrar voto
 async function registrarVoto(voto){
-  // toca confirma
-  document.getElementById("audioConfirma").play();
+  try{ await document.getElementById("audioConfirma").play(); } catch(e){console.log("Erro audio confirma"); }
 
   const snap = await get(child(ref(db), `votos/${cargoAtual}/${voto}`));
   await set(ref(db, `votos/${cargoAtual}/${voto}`), {count:(snap.exists()?snap.val().count:0)+1});
@@ -213,10 +209,9 @@ async function registrarVoto(voto){
   await set(ref(db, `eleitores_votaram/${titulo}`), dataVotacao);
 
   cargoIndex++;
-  if(cargoIndex>=cargos.length){
-    // fim da votação
+  if(cargoIndex >= cargos.length){ // Último cargo
     fimDisplay.style.display="flex";
-    document.getElementById("audioFim").play();
+    try{ await document.getElementById("audioFim").play(); } catch(e){console.log("Erro audio fim"); }
     setTimeout(()=>mostrarComprovante(),5000);
     etapa="titulo"; buf=[]; titulo=""; nome=""; cargoIndex=0;
   } else {
@@ -224,13 +219,22 @@ async function registrarVoto(voto){
   }
 }
 
-// Inicializa os eventos após o DOM
 document.addEventListener("DOMContentLoaded", ()=>{
-  // Digitação
   document.querySelectorAll(".key").forEach(b=>{
-    b.addEventListener("click", ()=>{
+    b.addEventListener("click", async ()=>{
       let lim = etapa==="titulo"?8:cargos[cargoIndex].digitos;
-      if(buf.length<lim){buf.push(b.dataset.n); render();}
+      if(buf.length<lim){ 
+        buf.push(b.dataset.n); 
+        render();
+        if(etapa==="voto" && buf.length===cargos[cargoIndex].digitos){
+          const snap = await get(child(ref(db), `candidatos/${cargoAtual}/${buf.join("")}`));
+          if(snap.exists()){
+            const data = snap.val();
+            cand.innerHTML = `${data.nome} (${data.partido})<br>`;
+            if(data.foto) cand.innerHTML += `<img src="${data.foto}">`;
+          } else { cand.textContent="NÚMERO INVÁLIDO"; }
+        } else { cand.textContent=""; }
+      }
     });
   });
 
@@ -257,12 +261,12 @@ document.addEventListener("DOMContentLoaded", ()=>{
     buf=[]; render(); cand.innerHTML="";
   });
 
-  // FUNDADOR
   document.getElementById("btnFundador").addEventListener("click", ()=>{
     if(prompt("Senha do fundador")!=="2007") return;
     founderPanel.style.display="flex";
   });
   document.getElementById("fecharFundadorBtn").addEventListener("click", ()=>founderPanel.style.display="none");
+
   document.getElementById("addEleitorBtn").addEventListener("click", async ()=>{
     const t=document.getElementById("etTitulo").value;
     const n=document.getElementById("etNome").value;
@@ -270,6 +274,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
     await set(ref(db, `eleitores/${t}`), {nome:n});
     alert("Eleitor cadastrado!"); document.getElementById("etTitulo").value=""; document.getElementById("etNome").value="";
   });
+
   document.getElementById("addCandidatoBtn").addEventListener("click", async ()=>{
     const cargo = document.getElementById("cargoSelect").value;
     const num=document.getElementById("candNum").value;
@@ -279,7 +284,36 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(!num||!n||!p){alert("Preencha todos os campos"); return;}
     let fotoURL = f?URL.createObjectURL(f):"";
     await set(ref(db, `candidatos/${cargo}/${num}`), {nome:n,partido:p,foto:fotoURL});
-    alert("Candidato cadastrado!"); document.getElementById("candNum").value=""; document.getElementById("candNome").value=""; document.getElementById("candPartido").value=""; document.getElementById("candFoto").value="";
+    alert("Candidato cadastrado!"); 
+    document.getElementById("candNum").value=""; document.getElementById("candNome").value=""; 
+    document.getElementById("candPartido").value=""; document.getElementById("candFoto").value="";
+  });
+
+  document.getElementById("salvarSenhaBtn").addEventListener("click", ()=>{
+    const s = document.getElementById("senhaBoletim").value;
+    if(s.length!==3){ alert("Digite 3 números"); return; }
+    const validade = Date.now() + 24*60*60*1000;
+    localStorage.setItem("senhaBoletim", JSON.stringify({senha:s, validade:validade}));
+    alert("Senha do boletim cadastrada! Válida por 24 horas.");
+  });
+
+  document.getElementById("btnBoletim").addEventListener("click", async ()=>{
+    const dadosStr = localStorage.getItem("senhaBoletim");
+    if(!dadosStr){ alert("Nenhuma senha de boletim cadastrada"); return; }
+    const dados = JSON.parse(dadosStr);
+    if(Date.now() > dados.validade){ alert("Senha expirada. Cadastre novamente."); return; }
+    const s = prompt("Digite a senha do boletim (3 números)");
+    if(!s || s!==dados.senha){ alert("Senha incorreta"); return; }
+
+    let str="TSE - NAÇÃO BRASILEIRA\n\n";
+    for(const c of cargos){
+      const snap = await get(ref(db, `votos/${c.nome}`));
+      str+=`--- ${c.nome.replace("_"," ")} ---\n`;
+      if(snap.exists()){ const votos = snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`; }
+      else str+="Nenhum voto registrado\n";
+      str+="\n";
+    }
+    alert(str);
   });
 
   document.getElementById("verApuracaoBtn").addEventListener("click", async ()=>{
@@ -287,49 +321,26 @@ document.addEventListener("DOMContentLoaded", ()=>{
     for(const c of cargos){
       const snap = await get(ref(db, `votos/${c.nome}`));
       str+=`--- ${c.nome.replace("_"," ")} ---\n`;
-      if(snap.exists()){
-        const votos = snap.val();
-        for(const k in votos) str+=`${k} → ${votos[k].count}\n`;
-      } else str+="Nenhum voto registrado\n";
+      if(snap.exists()){const votos=snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`;}
+      else str+="Nenhum voto registrado\n";
       str+="\n";
     }
     out.textContent=str;
   });
 
   document.getElementById("verEleitoresBtn").addEventListener("click", async ()=>{
-    const snap = await get(ref(db,"eleitores_votaram"));
+    const snap = await get(ref(db, "eleitores_votaram"));
     if(!snap.exists()){out.textContent="Nenhum eleitor votou ainda"; return;}
-    let str="ELEITORES QUE VOTARAM\n\n";
     const eleitores = snap.val();
+    let str="ELEITORES QUE VOTARAM\n\n";
     for(const t in eleitores){
-      str+=`Título: ${t}\n`;
-      for(const c in eleitores[t]){
-        str+=`${c}: ${eleitores[t][c].voto} (IP: ${eleitores[t][c].ip})\n`;
-      }
-      str+="\n";
+      str+=`${t} → ${JSON.stringify(eleitores[t])}\n`;
     }
     out.textContent=str;
   });
 
   document.getElementById("resetBtn").addEventListener("click", async ()=>{
-    if(confirm("Deseja realmente resetar todos os dados?")){await set(ref(db),{}); location.reload();}
-  });
-
-  document.getElementById("btnBoletim").addEventListener("click", async ()=>{
-    const dados = JSON.parse(localStorage.getItem("senhaBoletim"));
-    if(!dados){alert("Nenhuma senha de boletim cadastrada"); return;}
-    if(Date.now()>dados.validade){alert("Senha expirada"); return;}
-    const s = prompt("Digite a senha do boletim:");
-    if(s!==dados.senha){alert("Senha incorreta"); return;}
-    let str="BOLETIM DE VOTOS\n\n";
-    for(const c of cargos){
-      const snap = await get(ref(db, `votos/${c.nome}`));
-      str+=`--- ${c.nome.replace("_"," ")} ---\n`;
-      if(snap.exists()){const votos=snap.val(); for(const k in votos) str+=`${k} → ${votos[k].count}\n`;}
-      else str+="Nenhum voto registrado\n";
-      str+="\n";
-    }
-    alert(str);
+    if(confirm("Resetar tudo?")){ await set(ref(db),{}); location.reload(); }
   });
 
 });
